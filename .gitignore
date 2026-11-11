@@ -1,0 +1,42 @@
+# --- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- Environments -------------------------------------------------------
+.env
+*.env
+
+# --- Generated data & outputs (large, reproducible) ----------------------
+data/*
+!data/.gitkeep
+outputs/
+pul_runs/
+*.npy
+*.npz
+*.hdf5
+*.h5
+*.pt
+*.pth
+slurm-*.out
+slurm-*.err
+
+# --- Notebook scratch ----------------------------------------------------
+.ipynb_checkpoints/
+*.ipynb
+
+# --- External third-party code (NOT vendored — see NOTICE.md) ------------
+external/*
+
+# --- OS / editor ---------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

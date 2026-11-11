@@ -1,0 +1,19 @@
+# Conda environment for the PolyU HPC cluster (Linux).
+# Create with:
+#   conda env create -f environment.yml
+#   # on the Student HPC Platform use:  source activate fdm-pinn
+#   # on the COMP cluster use:           conda activate fdm-pinn
+name: fdm-pinn
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - matplotlib
+  - numexpr
+  - numba
+  - pyfftw
+  - h5py
+  - pytorch            # CPU wheel; for GPU jobs install the CUDA build instead
+  - pip

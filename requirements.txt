@@ -1,0 +1,13 @@
+# Core scientific stack (used by src/fdm and scripts/run_diagnostics.py)
+numpy
+scipy
+matplotlib
+
+# PyUltraLight dependencies (used only by scripts/run_reference.py)
+numexpr
+numba
+pyfftw
+h5py
+
+# PINN framework — install the CUDA build on the cluster
+torch
