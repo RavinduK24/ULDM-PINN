@@ -70,6 +70,15 @@ The validation directory contains relative L2 errors for density, phase-aligned
 wavefunction, and zero-mean potential, plus mass-conservation curves and a
 side-by-side comparison figure.
 
+To test genuine temporal extrapolation of the frozen checkpoint beyond its
+training horizon, set a later evaluation time. The spectral solution is evolved
+over the same extended interval, and the resulting figure marks the training
+boundary:
+
+```bash
+python scripts/validate_evolution.py --run data/evolution_mass_only --eval-time 4
+```
+
 ## Generating reference data with PyUltraLight
 
 PyUltraLight is third-party code and is **not** distributed here (see

@@ -22,6 +22,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-x", type=int, default=512)
     parser.add_argument("--n-t", type=int, default=121)
     parser.add_argument("--dt", type=float, default=1.0e-3)
+    parser.add_argument(
+        "--eval-time",
+        type=float,
+        default=None,
+        help="evaluation horizon; values beyond the training time test extrapolation",
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     return parser.parse_args()
 
@@ -67,25 +73,52 @@ def summarize(error: np.ndarray) -> dict[str, float]:
     }
 
 
+def summarize_at_horizon(
+    error: np.ndarray, t: np.ndarray, training_time: float
+) -> dict[str, float | None]:
+    """Summarize error inside training and, when present, extrapolation domains."""
+    training_mask = t <= training_time + 1.0e-12
+    extrapolation_mask = t > training_time + 1.0e-12
+    result: dict[str, float | None] = {
+        "training_horizon": float(error[np.flatnonzero(training_mask)[-1]]),
+        "extrapolation_mean": None,
+        "extrapolation_maximum": None,
+    }
+    if np.any(extrapolation_mask):
+        result["extrapolation_mean"] = float(np.mean(error[extrapolation_mask]))
+        result["extrapolation_maximum"] = float(np.max(error[extrapolation_mask]))
+    return result
+
+
 def main() -> None:
     args = parse_args()
     run_dir = os.path.abspath(args.run)
-    output_dir = os.path.abspath(args.out or os.path.join(run_dir, "validation"))
-    os.makedirs(output_dir, exist_ok=True)
-
     with open(os.path.join(run_dir, "metrics.json"), encoding="utf-8") as handle:
         training_metrics = json.load(handle)
     device = select_device(args.device)
     state = load_state(os.path.join(run_dir, "model.pt"), device)
     hidden, layers = infer_architecture(state)
     length = float(training_metrics["length"])
-    final_time = float(training_metrics["time"])
+    training_time = float(training_metrics["time"])
+    evaluation_time = training_time if args.eval_time is None else args.eval_time
+    if evaluation_time <= 0:
+        raise ValueError("eval-time must be positive")
+    if args.n_t < 2:
+        raise ValueError("n-t must be at least two")
+    default_output = "validation"
+    if evaluation_time > training_time + 1.0e-12:
+        default_output = f"validation_extrap_t{evaluation_time:g}"
+    output_dir = os.path.abspath(args.out or os.path.join(run_dir, default_output))
+    os.makedirs(output_dir, exist_ok=True)
+
     coupling = float(training_metrics["lambda"])
 
     torch.set_default_dtype(torch.float64)
     model = evolution.CartesianEvolutionNet(
         length=length,
-        final_time=final_time,
+        # Keep the time normalization used during training.  Evaluating beyond
+        # this value sends the network outside its learned normalized interval.
+        final_time=training_time,
         coupling=coupling,
         n_hidden=hidden,
         n_layers=layers,
@@ -94,14 +127,19 @@ def main() -> None:
     model.eval()
 
     x = np.linspace(0.0, length, args.n_x, endpoint=False)
-    t = np.linspace(0.0, final_time, args.n_t)
+    t = np.linspace(0.0, evaluation_time, args.n_t)
+    if (
+        evaluation_time > training_time + 1.0e-12
+        and not np.any(np.isclose(t, training_time, rtol=0.0, atol=1.0e-12))
+    ):
+        t = np.sort(np.append(t, training_time))
     real, imag, potential = evolution.evaluate(model, x, t)
     psi_pinn = real + 1j * imag
     density_pinn = np.abs(psi_pinn) ** 2
 
     reference = spectral.solve(
         length=length,
-        final_time=final_time,
+        final_time=evaluation_time,
         coupling=coupling,
         n_x=args.n_x,
         dt=args.dt,
@@ -138,11 +176,23 @@ def main() -> None:
         "device": str(device),
         "hidden_width": hidden,
         "hidden_layers": layers,
+        "training_time": training_time,
+        "evaluation_time": float(evaluation_time),
+        "is_temporal_extrapolation": bool(evaluation_time > training_time),
         "reference_n_x": args.n_x,
         "reference_dt": args.dt,
         "density_relative_l2": summarize(density_error),
         "phase_aligned_wavefunction_relative_l2": summarize(wavefunction_error),
         "zero_mean_potential_relative_l2": summarize(potential_error),
+        "density_error_by_domain": summarize_at_horizon(
+            density_error, t, training_time
+        ),
+        "wavefunction_error_by_domain": summarize_at_horizon(
+            wavefunction_error, t, training_time
+        ),
+        "potential_error_by_domain": summarize_at_horizon(
+            potential_error, t, training_time
+        ),
         "pinn_max_relative_mass_drift": float(mass_drift_pinn),
         "reference_max_relative_mass_drift": float(mass_drift_ref),
     }
@@ -176,7 +226,7 @@ def main() -> None:
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
-    extent = (0.0, length, 0.0, final_time)
+    extent = (0.0, length, 0.0, evaluation_time)
     image = axes[0, 0].imshow(
         density_ref, origin="lower", aspect="auto", extent=extent, cmap="magma"
     )
@@ -197,9 +247,20 @@ def main() -> None:
     axes[0, 2].set(title="Absolute density error", xlabel="x", ylabel="t")
     fig.colorbar(image, ax=axes[0, 2])
 
+    if evaluation_time > training_time + 1.0e-12:
+        for axis in axes[0, :]:
+            axis.axhline(
+                training_time,
+                color="cyan",
+                linestyle="--",
+                linewidth=1.2,
+            )
+
     axes[1, 0].plot(x, density_ref[-1], label="Spectral")
     axes[1, 0].plot(x, density_pinn[-1], "--", label="PINN")
-    axes[1, 0].set(title=f"Final density, t={final_time:g}", xlabel="x", ylabel="rho")
+    axes[1, 0].set(
+        title=f"Final density, t={evaluation_time:g}", xlabel="x", ylabel="rho"
+    )
     axes[1, 0].legend()
     axes[1, 1].semilogy(t, density_error, label="density")
     axes[1, 1].semilogy(t, wavefunction_error, label="wavefunction (phase aligned)")
@@ -211,10 +272,20 @@ def main() -> None:
     axes[1, 2].set(title="Mass conservation", xlabel="t", ylabel="relative drift")
     axes[1, 2].ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
     axes[1, 2].legend()
+    if evaluation_time > training_time + 1.0e-12:
+        for axis in (axes[1, 1], axes[1, 2]):
+            axis.axvspan(
+                training_time,
+                evaluation_time,
+                color="gray",
+                alpha=0.15,
+            )
+            axis.axvline(training_time, color="black", linestyle="--", linewidth=1.0)
     fig.tight_layout()
     fig.savefig(os.path.join(output_dir, "validation.png"), dpi=170)
     plt.close(fig)
 
+    print(f"training horizon={training_time:g}  evaluation horizon={evaluation_time:g}")
     print(f"density relative L2 (final)={density_error[-1]:.3e}")
     print(
         "wavefunction relative L2, phase aligned "
