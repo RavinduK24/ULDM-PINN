@@ -15,12 +15,14 @@ PolyU HPC cluster.
 
 ```
 src/fdm/            physics + diagnostics library
+  evolution.py      periodic 1-D Cartesian SPINN
   units.py          physical units, de Broglie parameter, soliton scaling
   diagnostics.py    the quantitative checks from the code review
   reference.py      loader for the external PyUltraLight solver
 scripts/
   run_diagnostics.py      re-run the notebook diagnostics
   run_reference.py        run PyUltraLight and emit reference data
+  train_evolution.py      train the Cartesian SPINN
 hpc/
   reference.sbatch        SLURM job: generate reference data
   pinn.sbatch             SLURM job: train the PINN (placeholder)
@@ -38,6 +40,36 @@ pip install -r requirements.txt
 python tests/test_units.py
 python scripts/run_diagnostics.py
 ```
+
+Run the 1-D Cartesian periodic problem (no external data required):
+
+```bash
+python scripts/train_evolution.py --adam 200 --lbfgs 20 --colloc 2000
+```
+
+Results are written to `data/evolution/`: `evolution.png`, `metrics.json`,
+`solution.npz`, and `model.pt`. The model uses `L=8`, `lambda=1`, the normalized
+wavefunction initial condition `Psi(x,0) = sqrt(2) sin(2 pi x/L)`, and the
+background-subtracted Poisson equation. The initial condition and periodic field
+and derivative boundary conditions are minimized as explicit soft loss terms,
+alongside the Schrödinger and Poisson residual losses. Their sample counts and
+weights can be controlled with `--initial-points`, `--boundary-points`,
+`--ic-weight`, and `--bc-weight`. Adam training defaults to four expanding
+causal time windows and also minimizes global mass drift. Configure these with
+`--time-windows`, `--mass-weight`, `--mass-times`, and `--mass-grid`; setting
+`--time-windows 1` disables the curriculum and `--mass-weight 0` disables the
+mass penalty.
+
+Validate a trained checkpoint against the independent second-order split-step
+Fourier solver:
+
+```bash
+python scripts/validate_evolution.py --run data/evolution_64x4
+```
+
+The validation directory contains relative L2 errors for density, phase-aligned
+wavefunction, and zero-mean potential, plus mass-conservation curves and a
+side-by-side comparison figure.
 
 ## Generating reference data with PyUltraLight
 
@@ -70,7 +102,7 @@ See [`docs/02_roadmap.md`](docs/02_roadmap.md) for details.
 - ✅ Physics + units (tested)
 - ✅ Notebook diagnostics (verified numbers in `docs/01_code_review.md`)
 - ⚠️ Reference harness (PyUltraLight driver written; runs pending cluster time)
-- ⬜ PINN baseline implementation (roadmap step 3)
+- 🛠️ Time-dependent Cartesian SPINN baseline implemented; reference validation pending
 
 Before making this repository public: add a `LICENSE`, and confirm the
 notebooks under review are cleared to publish (they are not committed here).

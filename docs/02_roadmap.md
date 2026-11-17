@@ -27,14 +27,13 @@ change `≲ 1e-3`.
 
 ## Step 3 — Build the corrected PINN baseline
 
-Start with the *simplest case that is also the real object*: the **3-D radially
-reduced** Schrödinger–Poisson equation (a 1+1-D problem), which is validated
-directly against PyUltraLight's spherically-symmetric run:
+Start with the paper's **1-D Cartesian periodic** Schrödinger–Poisson problem:
 
 ```
-i Ψ_t = −½ (Ψ_rr + 2 Ψ_r / r) + V Ψ      (λ = 1 first)
-V_rr  + 2 V_r / r = |Ψ|² − ⟨|Ψ|²⟩
-BC:   Ψ_r(0,t)=0, V_r(0,t)=0, Ψ(R,t)=0
+i Ψ_t = −(λ/2) Ψ_xx + (1/λ) V Ψ
+V_xx  = |Ψ|² − 1
+IC:   Ψ(x,0) = sqrt(2) sin(2πx/L), L=8
+BC:   Ψ and V, including their first derivatives, are periodic
 ```
 
 Pin the known failure modes from the review:
@@ -44,8 +43,8 @@ Pin the known failure modes from the review:
 | float32 through 2nd derivatives | float64 (or double-precision MLP), mixed-precision only as a later optimisation |
 | unweighted heterogeneous loss | gradient-norm / self-adaptive weights per term |
 | fixed collocation points | resample every epoch (or RAR) |
-| undertrained, tiny tanh net | Fourier features + hard-encoded IC/BC, L-BFGS polish after Adam |
-| no conservation | add the norm `∂_t ∫|Ψ|² = 0` as an explicit regulariser / diagnostic |
+| undertrained, tiny tanh net | sine activations + explicit IC/periodic-BC losses + L-BFGS polish after Adam |
+| no conservation | report `∫|Ψ|² dx` as an explicit diagnostic |
 | wrong Poisson | subtract the mean; the zero mode is the density normalisation, not a DOF |
 | no physical input | take `λ` as a network input (parametric PINN) |
 

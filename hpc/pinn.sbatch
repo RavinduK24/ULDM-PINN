@@ -1,5 +1,5 @@
 #!/bin/bash
-# Train the PINN (placeholder — see docs/02_roadmap.md step 3).
+# Train the time-dependent Cartesian SPINN (see docs/02_roadmap.md step 3).
 #
 # GPU request differs by platform:
 #   COMP cluster  : NVIDIA A800 via MIG, e.g.  --gres=gpu:2g.20gb:1
@@ -23,12 +23,11 @@ if ! conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
 fi
 source activate "$ENV_NAME"
 
-# Quick environment smoke test — replace with the real training entry point.
-python - <<'PY'
-import numpy, scipy, matplotlib, torch
-print("numpy", numpy.__version__)
-print("scipy", scipy.__version__)
-print("torch", torch.__version__, "cuda", torch.cuda.is_available())
-PY
+python scripts/train_evolution.py \
+    --device auto \
+    --out data/evolution \
+    --adam 5000 \
+    --lbfgs 250 \
+    --colloc 5000
 
 echo "[done]"
