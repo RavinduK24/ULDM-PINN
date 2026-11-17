@@ -218,13 +218,12 @@ def train(
     initial_weight: float = 1.0,
     boundary_weight: float = 1.0,
     mass_weight: float = 5.0,
-    time_windows: int = 4,
     n_mass_times: int = 8,
     n_mass_x: int = 256,
     seed: int = 0,
     log_every: int = 100,
 ) -> list[dict[str, float]]:
-    """Train in expanding causal time windows, then polish globally with L-BFGS."""
+    """Train over the full time domain, then polish globally with L-BFGS."""
     torch.manual_seed(seed)
     device = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
@@ -236,32 +235,26 @@ def train(
         raise ValueError("n_initial and n_boundary must be positive")
     if initial_weight < 0 or boundary_weight < 0 or mass_weight < 0:
         raise ValueError("constraint weights must be non-negative")
-    if time_windows < 1:
-        raise ValueError("time_windows must be positive")
     if n_mass_times < 1 or n_mass_x < 2:
         raise ValueError("n_mass_times must be positive and n_mass_x at least two")
 
-    def sample(
-        count: int, time_limit: float
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def sample(count: int) -> tuple[torch.Tensor, torch.Tensor]:
         x = (model.length * torch.rand(
             count, 1, dtype=dtype, device=device
         )).requires_grad_(True)
-        t = (time_limit * torch.rand(
+        t = (model.final_time * torch.rand(
             count, 1, dtype=dtype, device=device
         )).requires_grad_(True)
         return x, t
 
-    def sample_constraints(
-        time_limit: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def sample_constraints() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x_initial = model.length * torch.rand(
             n_initial, 1, dtype=dtype, device=device
         )
-        t_boundary = time_limit * torch.rand(
+        t_boundary = model.final_time * torch.rand(
             n_boundary, 1, dtype=dtype, device=device
         )
-        t_mass = time_limit * torch.rand(
+        t_mass = model.final_time * torch.rand(
             n_mass_times, 1, dtype=dtype, device=device
         )
         return x_initial, t_boundary, t_mass
@@ -295,10 +288,8 @@ def train(
         return total, pieces
 
     for step in range(n_adam):
-        window = min(time_windows - 1, step * time_windows // max(n_adam, 1))
-        time_limit = model.final_time * (window + 1) / time_windows
-        x, t = sample(n_colloc, time_limit)
-        x_initial, t_boundary, t_mass = sample_constraints(time_limit)
+        x, t = sample(n_colloc)
+        x_initial, t_boundary, t_mass = sample_constraints()
         adam.zero_grad(set_to_none=True)
         total, pieces = objective(x, t, x_initial, t_boundary, t_mass)
         total.backward()
@@ -310,7 +301,6 @@ def train(
             "initial": float(pieces[2].detach()),
             "boundary": float(pieces[3].detach()),
             "mass": float(pieces[4].detach()),
-            "time_limit": time_limit,
         }
         history.append(record)
         if step % log_every == 0 or step == n_adam - 1:
@@ -319,15 +309,13 @@ def train(
                 f"sch={record['schrodinger']:.3e}  "
                 f"poisson={record['poisson']:.3e}  "
                 f"ic={record['initial']:.3e}  bc={record['boundary']:.3e}  "
-                f"mass={record['mass']:.3e}  tmax={time_limit:.3g}",
+                f"mass={record['mass']:.3e}",
                 flush=True,
             )
 
     if n_lbfgs > 0:
-        x_fixed, t_fixed = sample(max(n_colloc, 10_000), model.final_time)
-        x_initial_fixed, t_boundary_fixed, t_mass_fixed = sample_constraints(
-            model.final_time
-        )
+        x_fixed, t_fixed = sample(max(n_colloc, 10_000))
+        x_initial_fixed, t_boundary_fixed, t_mass_fixed = sample_constraints()
         lbfgs = torch.optim.LBFGS(
             model.parameters(),
             lr=1.0,
@@ -356,7 +344,6 @@ def train(
             "initial": float(pieces[2].detach()),
             "boundary": float(pieces[3].detach()),
             "mass": float(pieces[4].detach()),
-            "time_limit": model.final_time,
         }
         history.append(record)
         print(

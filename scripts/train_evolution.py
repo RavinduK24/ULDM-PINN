@@ -44,10 +44,6 @@ def parse_args() -> argparse.Namespace:
         help="weight of the global mass-conservation loss",
     )
     parser.add_argument(
-        "--time-windows", type=int, default=4,
-        help="number of expanding causal Adam time windows (1 disables curriculum)",
-    )
-    parser.add_argument(
         "--mass-times", type=int, default=8,
         help="times sampled for the mass loss per optimizer step",
     )
@@ -80,8 +76,8 @@ def main() -> None:
         raise ValueError("initial-points must be positive")
     if args.boundary_points is not None and args.boundary_points < 1:
         raise ValueError("boundary-points must be positive")
-    if args.time_windows < 1 or args.mass_times < 1 or args.mass_grid < 2:
-        raise ValueError("time-windows/mass-times must be positive and mass-grid >= 2")
+    if args.mass_times < 1 or args.mass_grid < 2:
+        raise ValueError("mass-times must be positive and mass-grid >= 2")
     if args.ic_weight < 0 or args.bc_weight < 0 or args.mass_weight < 0:
         raise ValueError("loss weights must be non-negative")
 
@@ -116,7 +112,6 @@ def main() -> None:
         initial_weight=args.ic_weight,
         boundary_weight=args.bc_weight,
         mass_weight=args.mass_weight,
-        time_windows=args.time_windows,
         n_mass_times=args.mass_times,
         n_mass_x=args.mass_grid,
         seed=args.seed,
@@ -161,7 +156,6 @@ def main() -> None:
         "initial_weight": args.ic_weight,
         "boundary_weight": args.bc_weight,
         "mass_weight": args.mass_weight,
-        "time_windows": args.time_windows,
         "mass_times": args.mass_times,
         "mass_grid": args.mass_grid,
     }

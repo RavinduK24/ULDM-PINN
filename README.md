@@ -54,11 +54,10 @@ background-subtracted Poisson equation. The initial condition and periodic field
 and derivative boundary conditions are minimized as explicit soft loss terms,
 alongside the Schrödinger and Poisson residual losses. Their sample counts and
 weights can be controlled with `--initial-points`, `--boundary-points`,
-`--ic-weight`, and `--bc-weight`. Adam training defaults to four expanding
-causal time windows and also minimizes global mass drift. Configure these with
-`--time-windows`, `--mass-weight`, `--mass-times`, and `--mass-grid`; setting
-`--time-windows 1` disables the curriculum and `--mass-weight 0` disables the
-mass penalty.
+`--ic-weight`, and `--bc-weight`. Training covers the full time domain at every
+Adam step and also minimizes global mass drift. Configure the latter with
+`--mass-weight`, `--mass-times`, and `--mass-grid`; setting `--mass-weight 0`
+disables the mass penalty.
 
 Validate a trained checkpoint against the independent second-order split-step
 Fourier solver:
